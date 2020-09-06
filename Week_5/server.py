@@ -1,32 +1,38 @@
-# обработка нескольких соединений одновременно, процессы и потоки
+# Неблокирующий ввод/вывод, обучающий пример
+
 import socket
-import threading
-import multiprocessing
+import select
 
-with socket.socket() as sock:
-    sock.bind(("", 10002))
-    sock.listen()
-    
-    workers_count = 3
-    workers_list = [multiprocessing.Process(target=worker,args=(sock,))for _ in range(workers_count)]
-    for w in workers_list:
-        w.start()
-    for w in workers_list:
-        w.join()
-        
-# обработка нескольких соединений одновременно, процессы и потоки
-def worker(sock):
-    while True:
-        conn, addr = sock.accept()
-        print("pid", os.getpid())
-        th = threading.Thread(target=process_request,args=(conn, addr))
-        th.start()
+sock = socket.socket()
+sock.bind(("", 10001))
+sock.listen()
 
-def process_request(conn, addr):
-    print("connected client:", addr)
-    with conn:
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-        print(data.decode("utf8"))
+# как обработать запросы для conn1 and conn2
+# одновременно без потока?
+conn1, addr = sock.accept()
+conn2, addr = sock.accept()
+
+conn1.setblocking(0)
+conn2.setblocking(0)
+
+epoll = select.epoll()
+epoll.register(conn1.fileno(), select.EPOLLIN | select.EPOLLOUT)
+epoll.register(conn2.fileno(), select.EPOLLIN | select.EPOLLOUT)
+
+conn_map = {
+    conn1.fileno(): conn1,
+    conn2.fileno(): conn2
+}
+# Неблокирующий ввод/вывод, обучающий пример
+# Цикл обработки событий в epoll
+
+while True:
+    events = epoll.poll(1)
+    for fileno, event in events:
+        if event & select.EPOLLIN:
+            # обработка чтения из сокета
+            data=conn_map[fileno].recv(1024)
+            print(data.decode("utf8"))
+        elif event & select.EPOLLOUT:
+            # обработка записи в сокет
+            conn_map[fileno].send("pong".encode("utf8"))
