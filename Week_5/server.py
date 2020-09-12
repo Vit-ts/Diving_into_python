@@ -1,38 +1,35 @@
-# Неблокирующий ввод/вывод, обучающий пример
-
-import socket
-import select
-
-sock = socket.socket()
-sock.bind(("", 10001))
-sock.listen()
-
-# как обработать запросы для conn1 and conn2
-# одновременно без потока?
-conn1, addr = sock.accept()
-conn2, addr = sock.accept()
-
-conn1.setblocking(0)
-conn2.setblocking(0)
-
-epoll = select.epoll()
-epoll.register(conn1.fileno(), select.EPOLLIN | select.EPOLLOUT)
-epoll.register(conn2.fileno(), select.EPOLLIN | select.EPOLLOUT)
-
-conn_map = {
-    conn1.fileno(): conn1,
-    conn2.fileno(): conn2
-}
-# Неблокирующий ввод/вывод, обучающий пример
-# Цикл обработки событий в epoll
-
-while True:
-    events = epoll.poll(1)
-    for fileno, event in events:
-        if event & select.EPOLLIN:
-            # обработка чтения из сокета
-            data=conn_map[fileno].recv(1024)
-            print(data.decode("utf8"))
-        elif event & select.EPOLLOUT:
-            # обработка записи в сокет
-            conn_map[fileno].send("pong".encode("utf8"))
+# создание сокета, контекстный менеджер
+# сервер
+import socket, re
+data_file = {}
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+with socket.socket() as sock:
+    sock.bind(("", 10001))
+    sock.listen()
+   
+    while True:
+        conn, addr = sock.accept()
+        conn.settimeout(30) # timeout := None|0|gt 0
+        with conn:
+            while True:
+                try:
+                    data = conn.recv(1024)
+                except socket.timeout:
+                    print("close connection by timeout")
+                    break
+                    
+                if not data:
+                    break
+                pattern = re.compile(r'\w+')
+                get_put = pattern.findall(data.decode("utf8"))[0]
+                metrics = pattern.findall(data.decode("utf8"))[1]
+                try:
+                    conn.settimeout(pattern.findall(data.decode("utf8"))[3])
+                except:
+                    pass
+                if get_put == 'put':
+                    data_file[pattern.findall(data.decode("utf8"))[1]] = pattern.findall(data.decode("utf8"))[2]
+                elif get_put == 'get':
+                    #if metrics == "*":
+                    #    conn.send(str(data_file).encode("utf-8"))
+                    conn.send(str(data_file[pattern.findall(data.decode("utf8"))[1]]).encode("utf-8"))
